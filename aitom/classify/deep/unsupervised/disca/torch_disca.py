@@ -16,6 +16,11 @@ from torchvision.transforms import Normalize
 
 from aitom.classify.deep.unsupervised.disca.util import *
 
+import matplotlib.pyplot as plt
+from torch.optim.lr_scheduler import MultiStepLR
+from sklearn.metrics import homogeneity_completeness_v_measure
+
+
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -615,8 +620,19 @@ def image_normalization(img_list):
 
 
 
-if __name__ == '__main__':  
+def main():
 
+    parser = argparse.Argumentparser(description="Unsupervised Structural Pattern Mining with DISCA")
+    parser.add_argument("--output_model_path", type=str, help="path to save output model")
+    parser.add_argument("--output_label_path", type=str, help="path to save labels")
+    parser.add_argument("--gt_known", type=bool, help="if ground truth is available, set this flag to True", default=False)
+    parser.add_argument("--path_to_gt", type=str, help="path to saved gt labels, use only if gt_known flag is true, default=None)
+    parser.add_argument("--candidatesKs", type=int_list, help="number of k candidates", default=None)
+    parser.add_argument("--img_size", type=int, help="size of input images",default=32)
+    parser.add_argument("--batch_size
+    
+    args = parser.parse_args()
+	
     x_train = ''  ### load the x_train data, should be shape (n, shape_1, shape_2, shape_3, 1)
 
     gt =   '' ### load or define label ground truth here, if for simulated data 
@@ -771,5 +787,17 @@ if __name__ == '__main__':
         accuracies.append(accuracy)
         execution_times.append(exec_time)
         learning_rate.append(scheduler.get_last_lr()[0])
+
+        #if K == 5:   ### This is for evaluating accuracy on simulated data        
+            #labels_gt = align_cluster_index(gt, labels) 
+ 
+            #print('Accuracy:', np.sum(labels_gt == gt)/len(gt), '############################################') 
+ 
+        #homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(gt, labels)                                                             
+                                                      
+        #print('Homogeneity score:', homogeneity, '############################################')                                                          
+        #print('Completeness score:', completeness, '############################################')                                              
+        #print('V_measure:', v_measure, '############################################')  
+
 
 
