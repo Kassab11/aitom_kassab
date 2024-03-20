@@ -24,6 +24,7 @@ from aitom.filter.gaussian import dog_smooth
 from bisect import bisect
 from pprint import pprint
 import aitom.io.mrcfile_proxy as TIM
+import argparse
 
 def picking(path, s1, s2, t, find_maxima=True, partition_op=None, multiprocessing_process_num=0, pick_num=None):
     '''
@@ -74,8 +75,18 @@ def picking(path, s1, s2, t, find_maxima=True, partition_op=None, multiprocessin
     return result
     
 def main():
-    # Download from: https://cmu.box.com/s/9hn3qqtqmivauus3kgtasg5uzlj53wxp
-    path = '/ldap_shared/home/v_zhenxi_zhu/data/aitom_demo_single_particle_tomogram.mrc'
+
+    parser=argparse.ArgumentParser(description="extract subvolumes using DoG")
+    parser.add_argument("--mrc_path", type=str, help="path to tomogram mrc file", default='/l/users/mohamad.kassab/ccpem-20221108/emd_4191/emd_4191.mrc')
+    parser.add_argument("--subvolume_path", type=str, help="path to save subvolumes", default= "/l/users/mohamad.kassab/disca_test/emd.pickle")
+    parser.add_argument("--peak_location_file", type=str, help="path to save extracted subtomogram peak location", default='/l/users/mohamad.kassab/disca_test/emd_infos.json')
+    parser.add_argument("--subvolume_size", type=int, help="subvolume image size", default=32)
+
+    args=parser.parse_args()
+
+
+
+    path = args.mrc_path
     
     # Also, we can crop and only use part of the mrc image instead of binning for tasks requiring higher resolution
     # crop_path = 'cropped.mrc'
@@ -90,18 +101,20 @@ def main():
     # print(mrc_header['MRC']['xlen'], mrc_header['MRC']['nx'], voxel_spacing_in_nm, sigma1)
     
     partition_op = {'nonoverlap_width': sigma1*20, 'overlap_width': sigma1*10, 'save_vg': False}
-    result = picking(path, s1=sigma1, s2=sigma1*1.1, t=3, find_maxima=False, partition_op=partition_op, multiprocessing_process_num=10, pick_num=1000)
+    result = picking(path, s1=sigma1, s2=sigma1*1.1, t=3, find_maxima=False, partition_op=partition_op, multiprocessing_process_num=10, pick_num=None)
     print("DoG done, %d particles picked" % len(result))
     pprint(result[:5])
     
     # (Optional) Save subvolumes of peaks for autoencoder input
     dump_subvols = True
     if dump_subvols: # use later for autoencoder
-        subvols_loc = "demo_single_particle_subvolumes.pickle"
+        subvols_loc = args.subvolume_path
         from aitom.classify.deep.unsupervised.autoencoder.autoencoder_util import peaks_to_subvolumes
         a = io_file.read_mrc_data(path)
-        d = peaks_to_subvolumes(im_vol_util.cub_img(a)['vt'], result, 32)
-        io_file.pickle_dump(d, subvols_loc)
+        d = peaks_to_subvolumes(im_vol_util.cub_img(a)['vt'], result, args.subvolume_size)
+        x_keys = [_ for _ in d['vs'] if d['vs'][_]['v'] is not None]
+        sub_save = [d['vs'][_]['v'] for _ in x_keys]
+        io_file.pickle_dump(sub_save, subvols_loc)
         print("Save subvolumes .pickle file to:", subvols_loc)
         
     # Display selected peaks using imod/3dmod (http://bio3d.colorado.edu/imod/)
@@ -123,17 +136,16 @@ def main():
         for j in range(len(loc_np)):
             loc.append(loc_np[j].tolist())    
         json_data.append({'peak':{'loc':loc}}) 
-    with open('data_json_file.json','w') as f:
+    with open(args.peak_location_file,'w') as f:
         json.dump(json_data,f)
 
-    dj=json_data
-    x = N.zeros(    (len(dj), 3)  )
-    for i,d in enumerate(dj):        x[i,:] = N.array(d['peak']['loc'])
+    #dj=json_data
+    #x = N.zeros(    (len(dj), 3)  )
+    #for i,d in enumerate(dj):        x[i,:] = N.array(d['peak']['loc'])
 
-    l = generate_lines(x_full=x, rad=sigma1)
-    display_map_with_lines(l=l, map_file=path)
+    #l = generate_lines(x_full=x, rad=sigma1)
+    #display_map_with_lines(l=l, map_file=path)
     
     
 if __name__ == '__main__':
     main()
-
