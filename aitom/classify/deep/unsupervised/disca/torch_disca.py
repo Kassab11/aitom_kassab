@@ -579,8 +579,8 @@ def main():
     parser.add_argument("--output_model_path", type=str, help="path to save output model",default="/l/users/mohamad.kassab/disca_test/model_torch_60.pth")
     parser.add_argument("--output_label_path", type=str, help="path to save labels", default="/l/users/mohamad.kassab/disca_test/label_path_torch_60.pickle")
     parser.add_argument("--gt_known", type=bool, help="if ground truth is available, set this flag to True", default=True)
-    parser.add_argument("--path_to_gt", type=str, help="path to saved gt labels, use only if gt_known flag is true", default="/l/users/mohamad.kassab/final_data/DISCA_DATA_60_0.1_id.pickle")
-    parser.add_argument("--true_k", type=int, help="true number of classes, use only if gt_known flag is true", default=5)		
+    parser.add_argument("--path_to_gt", type=str, help="path to saved gt labels, use only if gt_known flag is true, else set as None", default="/l/users/mohamad.kassab/final_data/DISCA_DATA_60_0.1_id.pickle")
+    parser.add_argument("--true_k", type=int, help="true number of classes, use only if gt_known flag is true, else set as None", default=5)		
     parser.add_argument("--candidatesKs", type=int_list, help="number of k candidates", default=[3,4,5,6])
     parser.add_argument("--img_size", type=int, help="size of input images",default=24)
     parser.add_argument("--batch_size", type=int, help="Batch Size",default=64)
@@ -592,7 +592,7 @@ def main():
     parser.add_argument("--reg_covar", type=float, help="reg_covar rate", default=0.00001)
     parser.add_argument("--normalize", type=bool, help="set flag to true if you want to normalize your training dataset", default=False)
     parser.add_argument("--factor_use", type=int, help="factor determining size of data augmentation", default=2)
-    parser.add_argument("--class_id", type=ast.literal_eval, help="dictionary used for class mapping", default = "{'1I6V': 0, '1QO1': 1, '3DY4': 2, '4V4A': 3, '5LQW': 4}")	
+    parser.add_argument("--class_id", type=ast.literal_eval, help="dictionary used for class mapping", default = None)	
     parser.add_argument("--checkpoint_dir", type=str, help="directory to save checkpoints", default="/l/users/mohamad.kassab/disca_test/checkpoint")
     parser.add_argument("--load_checkpoint", type=str, help="path to a checkpoint file to load and resume training", default=None)
 
@@ -632,9 +632,7 @@ def main():
 
 	
     x_train = load_pickle_file(args.training_data_path)  ### load the x_train data, should be shape (n, shape_1, shape_2, shape_3, 1)
-
-    gt = load_pickle_file(args.path_to_gt) ### load or define label ground truth here, if for simulated data 
-
+    gt = None
 
     if args.normalize:
         x_train = image_normalization(x_train)	   
@@ -645,10 +643,12 @@ def main():
     
     
     x_train = torch.tensor(data_array_normalized, dtype=torch.float32)  ### load the x_train data, should be shape (n, 1, shape_1, shape_2, shape_3)
-    
-    class_mapping = args.class_id
-    numerical_gt = [class_mapping[_] for _ in gt]
-    gt = numerical_gt
+
+    if args.gt_known is not False:   
+            gt = load_pickle_file(args.path_to_gt) ### load or define label ground truth here, if for simulated data
+            class_mapping = args.class_id
+            numerical_gt = [class_mapping[_] for _ in gt]
+            gt = numerical_gt
     
     ### Generalized EM Process ###
     K = None
@@ -816,13 +816,14 @@ def main():
         if K == args.true_k and args.gt_known:   ### This is for evaluating accuracy on simulated data        
             labels_gt = align_cluster_index(gt, labels) 
  
-            print('Accuracy:', np.sum(labels_gt == gt)/len(gt), '############################################') 
+            print('Accuracy:', np.sum(labels_gt == gt)/len(gt), '############################################')
  
-        homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(gt, labels)                                                             
+        if args.gt_known: 
+            homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(gt, labels)                                                             
                                                       
-        print('Homogeneity score:', homogeneity, '############################################')                                                          
-        print('Completeness score:', completeness, '############################################')                                              
-        print('V_measure:', v_measure, '############################################')  
+            print('Homogeneity score:', homogeneity, '############################################')                                                          
+            print('Completeness score:', completeness, '############################################')                                              
+            print('V_measure:', v_measure, '############################################')  
 
 if __name__ == "__main__":
   main()
