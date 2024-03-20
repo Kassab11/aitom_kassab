@@ -19,11 +19,13 @@ from aitom.classify.deep.unsupervised.disca.util import *
 import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import MultiStepLR
 from sklearn.metrics import homogeneity_completeness_v_measure
+import ast
 
 
 
 import warnings
 warnings.filterwarnings("ignore")
+
 
 
 class Subtomogram_Dataset:
@@ -103,7 +105,7 @@ class YOPOFeatureModel(nn.Module):
         super(YOPOFeatureModel, self).__init__()
 
         self.dropout = nn.Dropout(0.5)
-        self.m1 = self.get_block(32, 64)
+        self.m1 = self.get_block(1, 64)
         self.m2 = self.get_block(64, 80)
         self.m3 = self.get_block(80, 96)
         self.m4 = self.get_block(96, 112)
@@ -113,9 +115,6 @@ class YOPOFeatureModel(nn.Module):
         self.m8 = self.get_block(160, 176)
         self.m9 = self.get_block(176, 192)
         self.m10 = self.get_block(192, 208)
-        # self.m11 = self.get_block(104, 117)
-        # self.m12 = self.get_block(117, 140)
-        # self.m13 = self.get_block(140, 150)
         self.batchnorm = torch.nn.BatchNorm3d(1360)
         self.linear = nn.Linear(
             in_features=1360,
@@ -134,10 +133,10 @@ class YOPOFeatureModel(nn.Module):
             torch.nn.Conv3d(in_channels=input_channel_size,
                             out_channels=output_channel_size,
                             kernel_size=(3, 3, 3),
-                            padding='same',
+                            padding=0,
                             dilation=(1, 1, 1)),  
-            torch.nn.BatchNorm3d(output_channel_size),
-            torch.nn.ELU(inplace=True),
+            torch.nn.ELU(),
+            torch.nn.BatchNorm3d(output_channel_size)
         )
 
     '''
@@ -156,6 +155,7 @@ class YOPOFeatureModel(nn.Module):
 	'''
 
     def forward(self, input_image):
+	output = output.view(-1, 1, Config.image_size, Config.image_size, Config.image_size)
         output = self.dropout(input_image)
         output = self.m1(output)
         o1 = F.max_pool3d(output, kernel_size=output.size()[2:])
@@ -178,13 +178,7 @@ class YOPOFeatureModel(nn.Module):
         output = self.m10(output)
         o10 = F.max_pool3d(output, kernel_size=output.size()[2:])
         """
-		output = self.m11(output)
-		o11 = F.max_pool3d(output, kernel_size=output.size()[2:])
-		output = self.m12(output)
-		o12 = F.max_pool3d(output, kernel_size=output.size()[2:])
-		output = self.m13(output)
-		o13 = F.max_pool3d(output, kernel_size=output.size()[2:])
-		"""
+
         m = torch.cat((o1, o2, o3, o4, o5, o6, o7, o8, o9, o10), dim=1)
         m = self.batchnorm(m)
         m = nn.Flatten()(m)
@@ -404,7 +398,7 @@ def rotate3d_zyz(data, Inv_R, center=None, order=2):
 
 
 
-def data_augmentation(x_train, factor = 1):
+def data_augmentation(x_train, factor = 2):
     """
     data augmentation given the training subtomogram data.
     if factor = 1, this function will return the unaugmented subtomogram data.
@@ -425,14 +419,14 @@ def data_augmentation(x_train, factor = 1):
                                                       
                 # prepare keyword arguments                                                                                                               
                 args_t = {}                                                                                                                               
-                args_t['data'] = x_train[i,0,:,:,:]                                                                                                                 
+                args_t['data'] = x_train[i,:,:,:,0]                                                                                                                 
                 args_t['Inv_R'] = random_rotation_matrix()                                                   
                                                                                                                                                                                                                                            
                 t['kwargs'] = args_t                                                  
                 ts[i] = t                                                       
                                                                       
             rs = run_batch(ts, worker_num=48)
-            x_train_f = np.expand_dims(np.array([_['result'] for _ in rs]), 1)
+            x_train_f = np.expand_dims(np.array([_['result'] for _ in rs]), -1)
             
             x_train_augmented.append(x_train_f)
             
@@ -486,8 +480,7 @@ def prepare_training_data(x_train, labels, label_smoothing_factor):
 
     label_one_hot = one_hot(labels, len(np.unique(labels))) 
     
-    factor_use = 1
-    index = np.array(range(x_train.shape[0] * factor_use)) 
+    index = np.array(range(x_train.shape[0] * Config.factor_use)) 
 
     np.random.shuffle(index)         
      
@@ -502,6 +495,12 @@ def prepare_training_data(x_train, labels, label_smoothing_factor):
     labels_permute = labels_augmented[index].copy() 
 
     return label_one_hot, x_train_permute, label_smoothing_factor, labels_permute
+
+def load_pickle_file(path):
+
+    with open(path, 'rb', 0) as f:
+	    data = pickle.load(f, encoding='latin1')
+    return data
 
 
 
@@ -609,16 +608,16 @@ def learning_rate_scheduler_type(value):
 def main():
 
     parser = argparse.Argumentparser(description="Unsupervised Structural Pattern Mining with DISCA")
-    #parser.add_argument("--output_model_path", type=str, help="path to save output model",default="./model/model_torch.pth")
-    #parser.add_argument("--output_label_path", type=str, help="path to save labels", default="./model/label_path_torch.pickle")
-    #parser.add_argument("--gt_known", type=bool, help="if ground truth is available, set this flag to True", default=False)
-    #parser.add_argument("--path_to_gt", type=str, help="path to saved gt labels, use only if gt_known flag is true", default=None)
-    #parser.add_argument("--true_k", type=int, help="true number of classes, use only if gt_known flag is true", default=None)		
-    #parser.add_argument("--candidatesKs", type=int_list, help="number of k candidates", default=None)
-    #parser.add_argument("--img_size", type=int, help="size of input images",default=32)
+    #parser.add_argument("--output_model_path", type=str, help="path to save output model",default="/l/users/mohamad.kassab/disca_test/model_torch.pth")
+    #parser.add_argument("--output_label_path", type=str, help="path to save labels", default="/l/users/mohamad.kassab/disca_test/label_path_torch.pickle")
+    #parser.add_argument("--gt_known", type=bool, help="if ground truth is available, set this flag to True", default=True)
+    #parser.add_argument("--path_to_gt", type=str, help="path to saved gt labels, use only if gt_known flag is true", default="/l/users/mohamad.kassab/final_data/DISCA_DATA_60_0.1_id.pickle")
+    #parser.add_argument("--true_k", type=int, help="true number of classes, use only if gt_known flag is true", default=5)		
+    #parser.add_argument("--candidatesKs", type=int_list, help="number of k candidates", default=[3,4,5,6])
+    #parser.add_argument("--img_size", type=int, help="size of input images",default=24)
     #parser.add_argument("--batch_size, type=int, help="Batch Size",default=64)
-    #parser.add_argument("--training_data_path", type=str, help="path to training data", default="")
-    #parser.add_argument("--M", type=int, help="total number of iterations to train DISCA model", default=20)
+    #parser.add_argument("--training_data_path", type=str, help="path to training data", default="/l/users/mohamad.kassab/simulated/DISCA_DATA_60_0.1_v.pickle")
+    #parser.add_argument("--M", type=int, help="total number of iterations to train DISCA model", default=3)
     #parser.add_argument("--yopo_iteration", type=int, help="number of epochs to train yopo network", default=10) 
     #parser.add_argument("--learning_rate_scheduler", type=learning_rate_scheduler_type, help ="learning rate scheduler", default=optim)
     #parser.add_argument("--step_size", type=int, help="step size for learning rate", default=1)
@@ -626,7 +625,9 @@ def main():
     #parser.add_argument("--lr", type=float, help="learning rate", default=1e-4)
     #parser.add_argument("--label_smoothing_factor", type=float, help="label_smoothing_factor rate", default=0.2)    
     #parser.add_argument("--reg_covar", type=float, help="reg_covar rate", default=0.00001)
-    #parser.add_argument ("normalize", type=bool, help="set flag to true if you want to normalize your training dataset", default=False)
+    #parser.add_argument ("--normalize", type=bool, help="set flag to true if you want to normalize your training dataset", default=False)
+    #parser.add_argument("--factor_user", type=int, help="factor determining size of data augmentation", default=2)
+    #parser.add_argument("--class_id", type=ast.literal_eval, help="dictionary used for class mapping", default = "{'1I6V': 0, '1QO1': 1, '3DY4': 2, '4V4A': 3, '5LQW': 4}")	
     
     args = parser.parse_args()
 
@@ -646,14 +647,18 @@ def main():
         model_path = args.output_model_path  ### path for saving torch model, should be a pth file ###
         label_path = args.output_label_path  ### path for saving labels, should be a .pickle file ###
 
+	factor_user = args.factor_user
+
         device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+	    
+    return Config
 
     
 
 	
-    x_train = args.training_data_path  ### load the x_train data, should be shape (n, shape_1, shape_2, shape_3, 1)
+    x_train = load_pickle_file(args.training_data_path)  ### load the x_train data, should be shape (n, shape_1, shape_2, shape_3, 1)
 
-    gt = args.path_to_gt ### load or define label ground truth here, if for simulated data 
+    gt = load_pickle_file(args.path_to_gt) ### load or define label ground truth here, if for simulated data 
 
 
     if args.normalize:
@@ -666,7 +671,9 @@ def main():
     
     x_train = torch.tensor(data_array_normalized, dtype=torch.float32)  ### load the x_train data, should be shape (n, 1, shape_1, shape_2, shape_3)
     
-    gt = None  ### load or define label ground truth here, if for simulated data
+    class_mapping = args.class_id
+    numerical_gt = [class_mapping[_] for _ in gt]
+    gt = numerical_gt
     
     ### Generalized EM Process ###
     K = None
@@ -794,10 +801,10 @@ def main():
         total_loss.append(iteration_loss)
 
         # calculate accuracy
-        accuracy = train_correct / train_total
+        #accuracy = train_correct / train_total
 
         exec_time = time.time() - start_time
-        print('Loss: {:.4f} Accuracy: {:.4f}  In: {:.4f}s'.format(iteration_loss, accuracy, exec_time))
+        #print('Loss: {:.4f} Accuracy: {:.4f}  In: {:.4f}s'.format(iteration_loss, accuracy, exec_time))
 
         # Inside your loop
         iterations.append(i)
