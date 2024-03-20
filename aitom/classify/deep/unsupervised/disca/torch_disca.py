@@ -592,7 +592,7 @@ def main():
     parser.add_argument("--reg_covar", type=float, help="reg_covar rate", default=0.00001)
     parser.add_argument("--normalize", type=bool, help="set flag to true if you want to normalize your training dataset", default=False)
     parser.add_argument("--factor_use", type=int, help="factor determining size of data augmentation", default=2)
-    parser.add_argument("--class_id", type=ast.literal_eval, help="dictionary used for class mapping", default = None)	
+    parser.add_argument("--class_id", type=ast.literal_eval, help="dictionary used for class mapping, if gt_known is False, set this flag to None", default = "{'1I6V': 0, '1QO1': 1, '3DY4': 2, '4V4A': 3, '5LQW': 4}")
     parser.add_argument("--checkpoint_dir", type=str, help="directory to save checkpoints", default="/l/users/mohamad.kassab/disca_test/checkpoint")
     parser.add_argument("--load_checkpoint", type=str, help="path to a checkpoint file to load and resume training", default=None)
 
