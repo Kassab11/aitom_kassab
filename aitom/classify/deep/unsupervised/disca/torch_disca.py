@@ -25,23 +25,6 @@ from sklearn.metrics import homogeneity_completeness_v_measure
 import warnings
 warnings.filterwarnings("ignore")
 
-# configuration
-class Config:
-    data_dir = ''
-    image_size = 32  ### subtomogram size ###
-    candidateKs = [5]  ### candidate number of clusters to test, it is also possible to set just one large K that overpartites the data
-
-    batch_size = 64
-    M = 80  ### number of iterations ###
-    lr = 1e-4  ### Original CNN learning rate ###
-
-    label_smoothing_factor = 0.2  ### label smoothing factor ###
-    reg_covar = 0.00001
-
-    model_path = './model/model_torch.pth'  ### path for saving torch model, should be a pth file ###
-    label_path = './model/label_path_torch.pickle'  ### path for saving labels, should be a .pickle file ###
-
-    device = torch.device('cuda:2') if torch.cuda.is_available() else torch.device('cpu')
 
 class Subtomogram_Dataset:
     def __init__(self, train_data, label_one_hot):
@@ -617,31 +600,66 @@ def image_normalization(img_list):
     print('Normalizing finished')
     return normalized_images
 
+def learning_rate_scheduler_type(value):
+
+    return value
 
 
 
 def main():
 
     parser = argparse.Argumentparser(description="Unsupervised Structural Pattern Mining with DISCA")
-    parser.add_argument("--output_model_path", type=str, help="path to save output model")
-    parser.add_argument("--output_label_path", type=str, help="path to save labels")
-    parser.add_argument("--gt_known", type=bool, help="if ground truth is available, set this flag to True", default=False)
-    parser.add_argument("--path_to_gt", type=str, help="path to saved gt labels, use only if gt_known flag is true, default=None)
-    parser.add_argument("--candidatesKs", type=int_list, help="number of k candidates", default=None)
-    parser.add_argument("--img_size", type=int, help="size of input images",default=32)
-    parser.add_argument("--batch_size
+    #parser.add_argument("--output_model_path", type=str, help="path to save output model",default="./model/model_torch.pth")
+    #parser.add_argument("--output_label_path", type=str, help="path to save labels", default="./model/label_path_torch.pickle")
+    #parser.add_argument("--gt_known", type=bool, help="if ground truth is available, set this flag to True", default=False)
+    #parser.add_argument("--path_to_gt", type=str, help="path to saved gt labels, use only if gt_known flag is true", default=None)
+    #parser.add_argument("--true_k", type=int, help="true number of classes, use only if gt_known flag is true", default=None)		
+    #parser.add_argument("--candidatesKs", type=int_list, help="number of k candidates", default=None)
+    #parser.add_argument("--img_size", type=int, help="size of input images",default=32)
+    #parser.add_argument("--batch_size, type=int, help="Batch Size",default=64)
+    #parser.add_argument("--training_data_path", type=str, help="path to training data", default="")
+    #parser.add_argument("--M", type=int, help="total number of iterations to train DISCA model", default=20)
+    #parser.add_argument("--yopo_iteration", type=int, help="number of epochs to train yopo network", default=10) 
+    #parser.add_argument("--learning_rate_scheduler", type=learning_rate_scheduler_type, help ="learning rate scheduler", default=optim)
+    #parser.add_argument("--step_size", type=int, help="step size for learning rate", default=1)
+    #parser.add_argument("--gamma", type=float, help="rate of decay", default=0.95)
+    #parser.add_argument("--lr", type=float, help="learning rate", default=1e-4)
+    #parser.add_argument("--label_smoothing_factor", type=float, help="label_smoothing_factor rate", default=0.2)    
+    #parser.add_argument("--reg_covar", type=float, help="reg_covar rate", default=0.00001)
+    #parser.add_argument ("normalize", type=bool, help="set flag to true if you want to normalize your training dataset", default=False)
     
     args = parser.parse_args()
+
+    # configuration
+    class Config:
+        
+        image_size = args.img_size  ### subtomogram size ###
+        candidateKs = args.candidatesKs  ### candidate number of clusters to test, it is also possible to set just one large K that overpartites the data
+
+        batch_size = args.batch_size
+        M = args.M  ### number of iterations ###
+        lr = args.lr  ### Original CNN learning rate ###
+
+        label_smoothing_factor = args.label_smoothing_factor  ### label smoothing factor ###
+        reg_covar = args.reg_covar
+
+        model_path = args.output_model_path  ### path for saving torch model, should be a pth file ###
+        label_path = args.output_label_path  ### path for saving labels, should be a .pickle file ###
+
+        device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+
+    
+
 	
-    x_train = ''  ### load the x_train data, should be shape (n, shape_1, shape_2, shape_3, 1)
+    x_train = args.training_data_path  ### load the x_train data, should be shape (n, shape_1, shape_2, shape_3, 1)
 
-    gt =   '' ### load or define label ground truth here, if for simulated data 
+    gt = args.path_to_gt ### load or define label ground truth here, if for simulated data 
 
-    ### Load Dataset Here ###    
-    data_sv = pickle_load(x_train)
-    x_keys = [_ for _ in data_sv['vs'] if data_sv['vs'][_]['v'] is not None]
 
-    x_train = [np.expand_dims(data_sv['vs'][_]['v'], -1) for _ in x_keys]
+    if args.normalize:
+        x_train = image_normalization(x_train)	   
+	    
+    x_train = np.expand_dims(x_train,-1)
     data_array_normalized = np.array(x_train)
     print('x_train.shape:',data_array_normalized.shape)
     
@@ -734,7 +752,7 @@ def main():
         print('Start CNN training')
 
         # learning rate decay
-        scheduler  = StepLR(optim, step_size = 1, gamma = 0.95)
+        scheduler  = StepLR(args.learning_rate_scheduler, step_size = args.step_size, gamma = args.gamma)
 
         dataset = Subtomogram_Dataset(x_train_permute, labels_permute)
         
@@ -746,7 +764,7 @@ def main():
         train_total = 0.0
         start_time = time.time()
 
-        for epoch in range(10):  # Loop for training epochs
+        for epoch in range(args.yopo_iteration):  # Loop for training epochs
             scheduler.step()  # Update learning rate at milestones
             print(f'Epoch {epoch + 1}, Learning Rate: {scheduler.get_last_lr()}')
 
@@ -788,16 +806,16 @@ def main():
         execution_times.append(exec_time)
         learning_rate.append(scheduler.get_last_lr()[0])
 
-        #if K == 5:   ### This is for evaluating accuracy on simulated data        
-            #labels_gt = align_cluster_index(gt, labels) 
+        if K == args.true_k and args.gt_known:   ### This is for evaluating accuracy on simulated data        
+            labels_gt = align_cluster_index(gt, labels) 
  
-            #print('Accuracy:', np.sum(labels_gt == gt)/len(gt), '############################################') 
+            print('Accuracy:', np.sum(labels_gt == gt)/len(gt), '############################################') 
  
-        #homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(gt, labels)                                                             
+        homogeneity, completeness, v_measure = homogeneity_completeness_v_measure(gt, labels)                                                             
                                                       
-        #print('Homogeneity score:', homogeneity, '############################################')                                                          
-        #print('Completeness score:', completeness, '############################################')                                              
-        #print('V_measure:', v_measure, '############################################')  
+        print('Homogeneity score:', homogeneity, '############################################')                                                          
+        print('Completeness score:', completeness, '############################################')                                              
+        print('V_measure:', v_measure, '############################################')  
 
 
 
