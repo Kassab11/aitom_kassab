@@ -20,11 +20,15 @@ import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import MultiStepLR
 from sklearn.metrics import homogeneity_completeness_v_measure
 import ast
+import argparse
+import os
 
 
 
 import warnings
 warnings.filterwarnings("ignore")
+
+Config = None
 
 
 
@@ -155,8 +159,8 @@ class YOPOFeatureModel(nn.Module):
 	'''
 
     def forward(self, input_image):
-	output = output.view(-1, 1, Config.image_size, Config.image_size, Config.image_size)
-        output = self.dropout(input_image)
+        output = input_image.view(-1, 1, Config.image_size, Config.image_size, Config.image_size)
+        output = self.dropout(output)
         output = self.m1(output)
         o1 = F.max_pool3d(output, kernel_size=output.size()[2:])
         output = self.m2(output)
@@ -177,7 +181,6 @@ class YOPOFeatureModel(nn.Module):
         o9 = F.max_pool3d(output, kernel_size=output.size()[2:])
         output = self.m10(output)
         o10 = F.max_pool3d(output, kernel_size=output.size()[2:])
-        """
 
         m = torch.cat((o1, o2, o3, o4, o5, o6, o7, o8, o9, o10), dim=1)
         m = self.batchnorm(m)
@@ -187,13 +190,6 @@ class YOPOFeatureModel(nn.Module):
 
 
 def statistical_fitting(features, labels, candidateKs, K, reg_covar, i):
-    """
-    fitting a Gaussian mixture model to the extracted features from YOPO
-    given current estimated labels, K, and a number of candidateKs. 
-
-    reg_covar: non-negative regularization added to the diagonal of covariance.     
-    i: random_state for initializing the parameters.
-    """
 
     pca = PCA(n_components=16)  
     features_pca = pca.fit_transform(features) 
@@ -278,17 +274,11 @@ def convergence_check(i, M, labels_temp, labels, done):
 
 
 def pickle_dump(o, path, protocol=2):
-    """                                                                                                                                                                            
-    write a pickle file given the object o and the path.                                                                                                                      
-    """ 
     with open(path, 'wb') as f:    pickle.dump(o, f, protocol=protocol)
 
 
 
 def run_iterator(tasks, worker_num=multiprocessing.cpu_count(), verbose=False):
-    """
-    parallel multiprocessing for a given task, this is useful for speeding up the data augmentation step.
-    """
 
     if verbose:		print('parallel_multiprocessing()', 'start', time.time())
 
@@ -357,9 +347,6 @@ def call_func(t):
 
 
 def random_rotation_matrix():
-    """
-    generate a random 3D rigid rotation matrix.
-    """
     m = np.random.random( (3,3) )
     u,s,v = np.linalg.svd(m)
 
@@ -368,9 +355,6 @@ def random_rotation_matrix():
 
 
 def rotate3d_zyz(data, Inv_R, center=None, order=2):
-    """
-    rotate a 3D data using ZYZ convention (phi: z1, the: x, psi: z2).
-    """
     # Figure out the rotation center
     if center is None:
         cx = data.shape[0] / 2
@@ -399,11 +383,6 @@ def rotate3d_zyz(data, Inv_R, center=None, order=2):
 
 
 def data_augmentation(x_train, factor = 2):
-    """
-    data augmentation given the training subtomogram data.
-    if factor = 1, this function will return the unaugmented subtomogram data.
-    if factor > 1, this function will return (factor - 1) number of copies of augmented subtomogram data.
-    """
 
     if factor > 1:
 
@@ -442,17 +421,11 @@ def data_augmentation(x_train, factor = 2):
 
 
 def one_hot(a, num_classes):
-    """
-    one-hot encoding. 
-    """
     return np.squeeze(np.eye(num_classes)[a.reshape(-1)])   
 
 
 
 def smooth_labels(labels, factor=0.1):
-    """
-    label smoothing. 
-    """
     labels *= (1 - factor)
     labels += (factor / labels.shape[1])
  
@@ -461,10 +434,6 @@ def smooth_labels(labels, factor=0.1):
 
 
 def remove_empty_cluster(labels):
-    """
-    if there are no samples in a cluster,
-    this function will remove the cluster and make the remaining cluster number compact. 
-    """
     labels_unique = np.unique(labels)
     for i in range(len(np.unique(labels))):
         labels[labels == labels_unique[i]] = i
@@ -474,9 +443,6 @@ def remove_empty_cluster(labels):
 
 
 def prepare_training_data(x_train, labels, label_smoothing_factor):
-    """
-    training data preparation given the current training data x_train, labels, and label_smoothing_factor
-    """
 
     label_one_hot = one_hot(labels, len(np.unique(labels))) 
     
@@ -484,7 +450,7 @@ def prepare_training_data(x_train, labels, label_smoothing_factor):
 
     np.random.shuffle(index)         
      
-    x_train_augmented = data_augmentation(x_train, factor_use) 
+    x_train_augmented = data_augmentation(x_train, Config.factor_use) 
     
     x_train_permute = x_train_augmented[index].copy() 
 
@@ -543,7 +509,7 @@ def update_output_layer(K, label_one_hot, batch_size, model_feature, features, l
     model_loss = []
     
 
-    for epoch in range(10):
+    for epoch in range(Config.yopo_iteration):
         model_classification.train()
         train_total = 0.0
         train_correct = 0.0
@@ -603,39 +569,44 @@ def learning_rate_scheduler_type(value):
 
     return value
 
-
+def int_list(value):
+    
+    return [int(item) for item in value.split(',')]
 
 def main():
 
-    parser = argparse.Argumentparser(description="Unsupervised Structural Pattern Mining with DISCA")
-    #parser.add_argument("--output_model_path", type=str, help="path to save output model",default="/l/users/mohamad.kassab/disca_test/model_torch.pth")
-    #parser.add_argument("--output_label_path", type=str, help="path to save labels", default="/l/users/mohamad.kassab/disca_test/label_path_torch.pickle")
-    #parser.add_argument("--gt_known", type=bool, help="if ground truth is available, set this flag to True", default=True)
-    #parser.add_argument("--path_to_gt", type=str, help="path to saved gt labels, use only if gt_known flag is true", default="/l/users/mohamad.kassab/final_data/DISCA_DATA_60_0.1_id.pickle")
-    #parser.add_argument("--true_k", type=int, help="true number of classes, use only if gt_known flag is true", default=5)		
-    #parser.add_argument("--candidatesKs", type=int_list, help="number of k candidates", default=[3,4,5,6])
-    #parser.add_argument("--img_size", type=int, help="size of input images",default=24)
-    #parser.add_argument("--batch_size, type=int, help="Batch Size",default=64)
-    #parser.add_argument("--training_data_path", type=str, help="path to training data", default="/l/users/mohamad.kassab/simulated/DISCA_DATA_60_0.1_v.pickle")
-    #parser.add_argument("--M", type=int, help="total number of iterations to train DISCA model", default=3)
-    #parser.add_argument("--yopo_iteration", type=int, help="number of epochs to train yopo network", default=10) 
-    #parser.add_argument("--learning_rate_scheduler", type=learning_rate_scheduler_type, help ="learning rate scheduler", default=optim)
-    #parser.add_argument("--step_size", type=int, help="step size for learning rate", default=1)
-    #parser.add_argument("--gamma", type=float, help="rate of decay", default=0.95)
-    #parser.add_argument("--lr", type=float, help="learning rate", default=1e-4)
-    #parser.add_argument("--label_smoothing_factor", type=float, help="label_smoothing_factor rate", default=0.2)    
-    #parser.add_argument("--reg_covar", type=float, help="reg_covar rate", default=0.00001)
-    #parser.add_argument ("--normalize", type=bool, help="set flag to true if you want to normalize your training dataset", default=False)
-    #parser.add_argument("--factor_user", type=int, help="factor determining size of data augmentation", default=2)
-    #parser.add_argument("--class_id", type=ast.literal_eval, help="dictionary used for class mapping", default = "{'1I6V': 0, '1QO1': 1, '3DY4': 2, '4V4A': 3, '5LQW': 4}")	
-    
+    parser = argparse.ArgumentParser(description="Unsupervised Structural Pattern Mining with DISCA")
+    parser.add_argument("--output_model_path", type=str, help="path to save output model",default="/l/users/mohamad.kassab/disca_test/model_torch_60.pth")
+    parser.add_argument("--output_label_path", type=str, help="path to save labels", default="/l/users/mohamad.kassab/disca_test/label_path_torch_60.pickle")
+    parser.add_argument("--gt_known", type=bool, help="if ground truth is available, set this flag to True", default=True)
+    parser.add_argument("--path_to_gt", type=str, help="path to saved gt labels, use only if gt_known flag is true", default="/l/users/mohamad.kassab/final_data/DISCA_DATA_60_0.1_id.pickle")
+    parser.add_argument("--true_k", type=int, help="true number of classes, use only if gt_known flag is true", default=5)		
+    parser.add_argument("--candidatesKs", type=int_list, help="number of k candidates", default=[3,4,5,6])
+    parser.add_argument("--img_size", type=int, help="size of input images",default=24)
+    parser.add_argument("--batch_size", type=int, help="Batch Size",default=64)
+    parser.add_argument("--training_data_path", type=str, help="path to training data", default="/l/users/mohamad.kassab/final_data/DISCA_DATA_60_0.1_v.pickle")
+    parser.add_argument("--M", type=int, help="total number of iterations to train DISCA model", default=10)
+    parser.add_argument("--yopo_iteration", type=int, help="number of epochs to train yopo network", default=10) 
+    parser.add_argument("--lr", type=float, help="learning rate", default=1e-4)
+    parser.add_argument("--label_smoothing_factor", type=float, help="label_smoothing_factor rate", default=0.2)    
+    parser.add_argument("--reg_covar", type=float, help="reg_covar rate", default=0.00001)
+    parser.add_argument("--normalize", type=bool, help="set flag to true if you want to normalize your training dataset", default=False)
+    parser.add_argument("--factor_use", type=int, help="factor determining size of data augmentation", default=2)
+    parser.add_argument("--class_id", type=ast.literal_eval, help="dictionary used for class mapping", default = "{'1I6V': 0, '1QO1': 1, '3DY4': 2, '4V4A': 3, '5LQW': 4}")	
+    parser.add_argument("--checkpoint_dir", type=str, help="directory to save checkpoints", default="/l/users/mohamad.kassab/disca_test/checkpoint")
+    parser.add_argument("--load_checkpoint", type=str, help="path to a checkpoint file to load and resume training", default=None)
+
     args = parser.parse_args()
 
+
+    checkpoint_dir = args.checkpoint_dir
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
     # configuration
-    class Config:
+    class config:
         
         image_size = args.img_size  ### subtomogram size ###
-        candidateKs = args.candidatesKs  ### candidate number of clusters to test, it is also possible to set just one large K that overpartites the data
+        candidateKs = args.candidatesKs ### candidate number of clusters to test, it is also possible to set just one large K that overpartites the data
 
         batch_size = args.batch_size
         M = args.M  ### number of iterations ###
@@ -647,11 +618,15 @@ def main():
         model_path = args.output_model_path  ### path for saving torch model, should be a pth file ###
         label_path = args.output_label_path  ### path for saving labels, should be a .pickle file ###
 
-	factor_user = args.factor_user
+        factor_use = args.factor_use
+
+        yopo_iteration = args.yopo_iteration
 
         device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 	    
-    return Config
+    global Config
+    Config = config()
+
 
     
 
@@ -680,8 +655,21 @@ def main():
     labels = None
     DBI_best = float('inf')
 
-    done = False
-    i = 0
+
+    if args.load_checkpoint is not None:
+        checkpoint = torch.load(args.load_checkpoint)
+        K = checkpoint['K']
+        labels = checkpoint['labels']
+        DBI_best = checkpoint['DBI_best']
+        i = checkpoint['iteration']
+        done = checkpoint['done']
+        model = checkpoint['model']
+        print(f"Checkpoint loaded at iteration {i}")
+    else:
+        i = 0
+        done = False
+        print("Starting training from scratch")
+
 
     total_loss = []
 
@@ -759,7 +747,7 @@ def main():
         print('Start CNN training')
 
         # learning rate decay
-        scheduler  = StepLR(args.learning_rate_scheduler, step_size = args.step_size, gamma = args.gamma)
+        scheduler  = StepLR(optim, step_size = 1, gamma = 0.95)
 
         dataset = Subtomogram_Dataset(x_train_permute, labels_permute)
         
@@ -794,10 +782,22 @@ def main():
 
             loss.backward()
             optim.step()
-
             predicted = torch.argmax(pred, 1)
             train_correct += (predicted == label_1).sum().float().item()
             train_total += label.size(0)
+
+
+        checkpoint = {
+            'model': model,
+            'K': K,
+            'labels': labels,
+            'DBI_best': DBI_best,
+            'iteration': i,
+            'done': done
+            }
+        checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_{i}.pth')
+        torch.save(checkpoint, checkpoint_path)        
+
         total_loss.append(iteration_loss)
 
         # calculate accuracy
@@ -807,11 +807,11 @@ def main():
         #print('Loss: {:.4f} Accuracy: {:.4f}  In: {:.4f}s'.format(iteration_loss, accuracy, exec_time))
 
         # Inside your loop
-        iterations.append(i)
-        losses.append(iteration_loss)
-        accuracies.append(accuracy)
-        execution_times.append(exec_time)
-        learning_rate.append(scheduler.get_last_lr()[0])
+        #iterations.append(i)
+        #losses.append(iteration_loss)
+        #accuracies.append(accuracy)
+        #execution_times.append(exec_time)
+        #learning_rate.append(scheduler.get_last_lr()[0])
 
         if K == args.true_k and args.gt_known:   ### This is for evaluating accuracy on simulated data        
             labels_gt = align_cluster_index(gt, labels) 
@@ -824,5 +824,5 @@ def main():
         print('Completeness score:', completeness, '############################################')                                              
         print('V_measure:', v_measure, '############################################')  
 
-
-
+if __name__ == "__main__":
+  main()
